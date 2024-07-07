@@ -17,6 +17,8 @@ jobs:
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       AZURE_RESOURCE_GROUP: rg-p2p-mailconf-env
+      AZURE_ENV_NAME: dev  # Replace with your actual environment name
+      AZURE_LOCATION: eastus-2  # Replace with your actual location
     steps:
       - name: Checkout
         uses: actions/checkout@v4
