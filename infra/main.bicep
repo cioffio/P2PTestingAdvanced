@@ -207,7 +207,8 @@ module web './app/web.bicep' = {
   }
 }
 
-// The application backend
+// Commenting out or removing the application backend module
+/*
 module api './app/api.bicep' = {
   name: 'api'
   scope: rg
@@ -226,7 +227,7 @@ module api './app/api.bicep' = {
   }
 }
 
-// Give the API access to KeyVault
+// Commenting out or removing the API access to KeyVault
 module apiKeyVaultAccess './core/security/keyvault-access.bicep' = {
   name: 'api-keyvault-access'
   scope: rg
@@ -235,8 +236,7 @@ module apiKeyVaultAccess './core/security/keyvault-access.bicep' = {
     principalId: api.outputs.SERVICE_API_IDENTITY_PRINCIPAL_ID
   }
 }
-
-//
+*/
 
 // Create an App Service Plan to group applications under the same payment plan and SKU
 module appServicePlan './core/host/appserviceplan.bicep' = {
@@ -306,15 +306,14 @@ module apimApi './app/apim-api.bicep' = if (useAPIM) {
   }
 }
 
-
-
 // App outputs
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
-output API_BASE_URL string = useAPIM ? apimApi.outputs.SERVICE_API_URI : api.outputs.SERVICE_API_URI
+// Commenting out the API_BASE_URL output
+// output API_BASE_URL string = useAPIM ? apimApi.outputs.SERVICE_API_URI : api.outputs.SERVICE_API_URI
 output REACT_APP_WEB_BASE_URL string = web.outputs.SERVICE_WEB_URI
 output USE_APIM bool = useAPIM
 output SERVICE_API_ENDPOINTS array = useAPIM ? [ apimApi.outputs.SERVICE_API_URI, api.outputs.SERVICE_API_URI ]: []
