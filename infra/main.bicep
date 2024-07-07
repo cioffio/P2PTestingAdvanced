@@ -27,8 +27,8 @@ param useAPIM bool = false
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
 
-param useVirtualNetworkIntegration bool = false
-param useVirtualNetworkPrivateEndpoint bool = false
+
+param useVirtualNetworkPrivateEndpoint bool = true
 param virtualNetworkAddressSpacePrefix string = '10.1.0.0/16'
 param virtualNetworkIntegrationSubnetAddressSpacePrefix string = '10.1.1.0/24'
 param virtualNetworkPrivateEndpointSubnetAddressSpacePrefix string = '10.1.2.0/24'
@@ -36,7 +36,7 @@ param virtualNetworkPrivateEndpointSubnetAddressSpacePrefix string = '10.1.2.0/2
 var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
-var useVirtualNetwork = useVirtualNetworkIntegration || useVirtualNetworkPrivateEndpoint
+var useVirtualNetwork = true
 var virtualNetworkName = '${abbrs.networkVirtualNetworks}${resourceToken}'
 var virtualNetworkIntegrationSubnetName = '${abbrs.networkVirtualNetworksSubnets}${resourceToken}-int'
 var virtualNetworkPrivateEndpointSubnetName = '${abbrs.networkVirtualNetworksSubnets}${resourceToken}-pe'
