@@ -33,7 +33,8 @@ jobs:
       - name: Install Azure CLI
         uses: azure/CLI@v1
         with:
-          version: latest
+          inlineScript: |
+            az --version
 
       - name: Log in with Azure (Federated Credentials)
         if: ${{ env.AZURE_CLIENT_ID != '' }}
