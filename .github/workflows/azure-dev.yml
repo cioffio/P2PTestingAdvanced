@@ -20,6 +20,7 @@ jobs:
       AZURE_RESOURCE_GROUP: rg-p2p-mailconf-env
       AZURE_ENV_NAME: dev  # Replace with your actual environment name
       AZURE_LOCATION: eastus  # Replace with your actual location
+      FUNCTION_APP_NAME: <Your-FunctionApp-Name>  # Replace with your actual Function App name
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,7 +45,9 @@ jobs:
           azd auth login --client-id $AZURE_CLIENT_ID --client-secret $(<secret.txt) --tenant-id $AZURE_TENANT_ID
         shell: bash
 
-
+      - name: Verify Login
+        run: |
+          az account show
 
       - name: Provision Infrastructure with Virtual Network
         run: azd provision --no-prompt
@@ -58,21 +61,15 @@ jobs:
           VIRTUAL_NETWORK_INTEGRATION_SUBNET_ADDRESS_SPACE_PREFIX: "10.1.1.0/24"
           VIRTUAL_NETWORK_PRIVATE_ENDPOINT_SUBNET_ADDRESS_SPACE_PREFIX: "10.1.2.0/24"
 
-      - name: Deploy Application
-        run: azd deploy --no-prompt
-        env:
-          AZURE_ENV_NAME: ${{ env.AZURE_ENV_NAME }}
-          AZURE_LOCATION: ${{ env.AZURE_LOCATION }}
-          AZURE_SUBSCRIPTION_ID: ${{ env.AZURE_SUBSCRIPTION_ID }}
-          AZURE_RESOURCE_GROUP: ${{ env.AZURE_RESOURCE_GROUP }}
-
       - name: Setup Azure Functions Core Tools
         run: npm install -g azure-functions-core-tools@4
 
       - name: Deploy Azure Functions
         run: |
-          func azure functionapp publish <Your-FunctionApp-Name>
+          cd C:\Users\apeccatiello\Desktop\P2PDeploymentTest-main\src\functions\uploadFunction
+          func azure functionapp publish ${{ env.FUNCTION_APP_NAME }}
         env:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}

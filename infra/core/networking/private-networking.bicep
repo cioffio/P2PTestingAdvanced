@@ -1,8 +1,8 @@
 param location string = resourceGroup().location
 param virtualNetworkName string
 param keyVaultName string
-param eventHubNamespaceName string
-param storageAccoutnName string
+
+param storageAccountName string
 param functionName string
 param virtualNetworkIntegrationSubnetName string
 param virtualNetworkPrivateEndpointSubnetName string
@@ -29,7 +29,7 @@ resource eventHubNamespace 'Microsoft.EventHub/namespaces@2021-11-01' existing =
 }
 
 resource storage 'Microsoft.Storage/storageAccounts@2022-05-01' existing = {
-  name: storageAccoutnName
+  name: storageAccountName
 }
 
 resource function 'Microsoft.Web/sites@2022-03-01' existing = {

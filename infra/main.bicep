@@ -2,105 +2,149 @@ targetScope = 'subscription'
 
 @minLength(1)
 @maxLength(64)
-@description('Name of the environment which is used to generate a short unique hash used in all resources.')
+@description('Name of the environment that can be used as part of naming resource convention')
 param environmentName string
 
 @minLength(1)
 @description('Primary location for all resources')
 param location string
 
-// Optional parameters to override the default azd resource naming conventions. Update the main.parameters.json file to provide values. e.g.,
-// "resourceGroupName": {
-//      "value": "myGroupName"
-// }
-param applicationInsightsDashboardName string = ''
-param applicationInsightsName string = ''
-param appServicePlanName string = ''
-param keyVaultName string = ''
-param logAnalyticsName string = ''
-param resourceGroupName string = ''
-param webServiceName string = ''
-
-
-@description('Id of the user or app to assign application roles')
-param principalId string = ''
-
-
-param useVirtualNetworkPrivateEndpoint bool = true
+param useVirtualNetworkIntegration bool = false
+param useVirtualNetworkPrivateEndpoint bool = false
 param virtualNetworkAddressSpacePrefix string = '10.1.0.0/16'
 param virtualNetworkIntegrationSubnetAddressSpacePrefix string = '10.1.1.0/24'
 param virtualNetworkPrivateEndpointSubnetAddressSpacePrefix string = '10.1.2.0/24'
 
-var abbrs = loadJsonContent('./abbreviations.json')
+// AZD will set AZURE_PRINCIPAL_ID to the principal ID of the user executing the deployment (identity of the logged in user of AZD).
+@description('The principal ID of the user to assign application roles.')
+param principalId string = ''
+
+// Locally, the AZURE_PRINCIPAL_ID may be a user. If running in a GitHub pipeline, AZURE_PRINCIPAL_ID is a service principal.
+@allowed([
+  'User'
+  'ServicePrincipal'
+])
+param principalType string = 'User'
+
+// Tags that should be applied to all resources.
+// 
+// Note that 'azd-service-name' tags should be applied separately to service host resources.
+// Example usage:
+//   tags: union(tags, { 'azd-service-name': <service name in azure.yaml> })
+var tags = {
+  'azd-env-name': environmentName
+}
+
+var abbrs = loadJsonContent('abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
-var tags = { 'azd-env-name': environmentName }
-var useVirtualNetwork = true
+
+var useVirtualNetwork = useVirtualNetworkIntegration || useVirtualNetworkPrivateEndpoint
 var virtualNetworkName = '${abbrs.networkVirtualNetworks}${resourceToken}'
 var virtualNetworkIntegrationSubnetName = '${abbrs.networkVirtualNetworksSubnets}${resourceToken}-int'
 var virtualNetworkPrivateEndpointSubnetName = '${abbrs.networkVirtualNetworksSubnets}${resourceToken}-pe'
 
-// Organize resources in a resource group
-resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
-  name: !empty(resourceGroupName) ? resourceGroupName : '${abbrs.resourcesResourceGroups}${environmentName}'
+var functionAppName = '${abbrs.webSitesFunctions}${resourceToken}'
+var storageSecretName = 'storage-connection-string'
+
+resource rg 'Microsoft.Resources/resourceGroups@2022-09-01' = {
+  name: 'rg-${environmentName}'
   location: location
   tags: tags
 }
 
-// Create an App Service Plan to group applications under the same payment plan and SKU
-module appServicePlan './core/host/appserviceplan.bicep' = {
-  name: 'appserviceplan'
+@description('This is the built-in role definition for the Key Vault Secret User role. See https://learn.microsoft.com/azure/role-based-access-control/built-in-roles#key-vault-secrets-user for more information.')
+resource keyVaultSecretUserRoleDefintion 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
+  scope: subscription()
+  name: '4633458b-17de-408a-b874-0445c86b69e6'
+}
+
+@description('This is the built-in role definition for the Azure Storage Blob Data Owner role. See https://learn.microsoft.com/azure/role-based-access-control/built-in-roles#storage-blob-data-owner for more information.')
+resource storageBlobDataOwnerRoleDefinition 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
+  scope: subscription()
+  name: 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
+}
+
+// TODO: Scope to the specific resource (Storage, Key Vault) instead of the resource group.
+//       See https://github.com/Azure/bicep/discussions/5926
+module storageRoleAssignment 'core/security/role.bicep' = {
+  name: 'storageRoleAssignment'
   scope: rg
   params: {
-    name: !empty(appServicePlanName) ? appServicePlanName : '${abbrs.webServerFarms}${resourceToken}'
-    location: location
-    tags: tags
-    sku: {
-      name: 'B3'
-    }
+    principalId: functionApp.outputs.identityPrincipalId
+    roleDefinitionId: storageBlobDataOwnerRoleDefinition.name
+    principalType: 'ServicePrincipal'
   }
 }
 
-// Store secrets in a keyvault
-module keyVault './core/security/keyvault.bicep' = {
-  name: 'keyvault'
+module keyVaultRoleAssignment 'core/security/role.bicep' = {
+  name: 'keyVaultRoleAssignment'
   scope: rg
   params: {
-    name: !empty(keyVaultName) ? keyVaultName : '${abbrs.keyVaultVaults}${resourceToken}'
+    principalId: functionApp.outputs.identityPrincipalId
+    roleDefinitionId: keyVaultSecretUserRoleDefintion.name
+    principalType: 'ServicePrincipal'
+  }
+}
+
+module logAnalytics './core/monitor/loganalytics.bicep' = {
+  name: 'logAnalytics'
+  scope: rg
+  params: {
+    name: '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
     location: location
     tags: tags
-    principalId: principalId
+  }
+}
+
+module appInsights './core/monitor/applicationinsights.bicep' = {
+  name: 'applicationInsights'
+  scope: rg
+  params: {
+    name: '${abbrs.insightsComponents}${resourceToken}'
+    tags: tags
+
+
+    dashboardName: ''
+    logAnalyticsWorkspaceId: logAnalytics.outputs.id
+    location: location
+  }
+}
+
+module storage './core/storage/storage-account.bicep' = {
+  name: 'storage'
+  scope: rg
+  params: {
+    name: '${abbrs.storageStorageAccounts}${resourceToken}'
+    location: location
+    tags: tags
+
+    fileShares: [
+      {
+        name: functionAppName
+      }
+    ]
+
+    // Set the key vault name to set the connection string as a secret in the key vault.
+    keyVaultName: keyVault.outputs.name
+    keyVaultSecretName: storageSecretName
+
     useVirtualNetworkPrivateEndpoint: useVirtualNetworkPrivateEndpoint
   }
 }
 
-// Monitor application with Azure Monitor
-module monitoring './core/monitor/monitoring.bicep' = {
-  name: 'monitoring'
+module keyVault 'core/security/keyvault.bicep' = {
+  name: 'keyVault'
   scope: rg
   params: {
+    name: '${abbrs.keyVaultVaults}${resourceToken}'
     location: location
     tags: tags
-    logAnalyticsName: !empty(logAnalyticsName) ? logAnalyticsName : '${abbrs.operationalInsightsWorkspaces}${resourceToken}'
-    applicationInsightsName: !empty(applicationInsightsName) ? applicationInsightsName : '${abbrs.insightsComponents}${resourceToken}'
-    applicationInsightsDashboardName: !empty(applicationInsightsDashboardName) ? applicationInsightsDashboardName : '${abbrs.portalDashboards}${resourceToken}'
+    enabledForRbacAuthorization: true
+    useVirtualNetworkPrivateEndpoint: useVirtualNetworkPrivateEndpoint
   }
 }
 
-// The application frontend
-module web './app/web.bicep' = {
-  name: 'web'
-  scope: rg
-  params: {
-    name: !empty(webServiceName) ? webServiceName : '${abbrs.webSitesAppService}web-${resourceToken}'
-    location: location
-    tags: tags
-    applicationInsightsName: monitoring.outputs.applicationInsightsName
-    appServicePlanId: appServicePlan.outputs.id
-  }
-}
-
-// Virtual Network and Subnets
-module integrationSubnetNsg './core/networking/network-security-group.bicep' = if (useVirtualNetwork) {
+module integrationSubnetNsg 'core/networking/network-security-group.bicep' = if (useVirtualNetwork) {
   name: 'integrationSubnetNsg'
   scope: rg
   params: {
@@ -109,7 +153,7 @@ module integrationSubnetNsg './core/networking/network-security-group.bicep' = i
   }
 }
 
-module privateEndpointSubnetNsg './core/networking/network-security-group.bicep' = if (useVirtualNetwork) {
+module privateEndpointSubnetNsg 'core/networking/network-security-group.bicep' = if (useVirtualNetwork) {
   name: 'privateEndpointSubnetNsg'
   scope: rg
   params: {
@@ -125,12 +169,16 @@ module vnet './core/networking/virtual-network.bicep' = if (useVirtualNetwork) {
     name: virtualNetworkName
     location: location
     tags: tags
+
     virtualNetworkAddressSpacePrefix: virtualNetworkAddressSpacePrefix
+
+    // TODO: Find a better way to handle subnets. I'm not a fan of this array of object approach (losing Intellisense).
     subnets: [
       {
         name: virtualNetworkIntegrationSubnetName
         addressPrefix: virtualNetworkIntegrationSubnetAddressSpacePrefix
-        networkSecurityGroupId: integrationSubnetNsg.outputs.id
+        networkSecurityGroupId: useVirtualNetwork ? integrationSubnetNsg.outputs.id : null
+
         delegations: [
           {
             name: 'delegation'
@@ -143,18 +191,87 @@ module vnet './core/networking/virtual-network.bicep' = if (useVirtualNetwork) {
       {
         name: virtualNetworkPrivateEndpointSubnetName
         addressPrefix: virtualNetworkPrivateEndpointSubnetAddressSpacePrefix
-        networkSecurityGroupId: privateEndpointSubnetNsg.outputs.id
+        networkSecurityGroupId: useVirtualNetwork ? privateEndpointSubnetNsg.outputs.id : null
         privateEndpointNetworkPolicies: 'Disabled'
       }
     ]
   }
 }
 
-// App outputs
-output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
+// Sets up private endpoints and private dns zones for the resources.
+module networking 'core/networking/private-networking.bicep' = if (useVirtualNetworkPrivateEndpoint) {
+  name: 'networking'
+  scope: rg
+  params: {
+    location: location
+    keyVaultName: keyVault.outputs.name
+    storageAccountName: storage.outputs.name
+    functionName: functionApp.outputs.name
+    virtualNetworkIntegrationSubnetName: virtualNetworkIntegrationSubnetName
+    virtualNetworkName: virtualNetworkName
+    virtualNetworkPrivateEndpointSubnetName: virtualNetworkPrivateEndpointSubnetName
+  }
+}
+
+module functionPlan './core/host/functionplan.bicep' = {
+  name: 'functionPlan'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    OperatingSystem: 'Linux'
+    name: '${abbrs.webServerFarms}${resourceToken}'
+    planSku: 'EP1'
+  }
+}
+
+module functionApp 'core/host/functions.bicep' = {
+  name: 'functionApp'
+  scope: rg
+  params: {
+    location: location
+    tags: union(tags, { 'azd-service-name': 'event-consumer-func' })
+    name: functionAppName
+    appServicePlanId: functionPlan.outputs.planId
+    keyVaultName: keyVault.outputs.name
+    storageKeyVaultSecretName: storageSecretName
+    managedIdentity: true // creates a system assigned identity
+    functionsWorkerRuntime: 'python'
+    runtimeVersion: '3.9'
+    extensionVersion: '~4'
+    storageAccountName: storage.outputs.name
+    vnetRouteAllEnabled: true
+    kind: 'functionapp,linux'
+    alwaysOn: true
+    enableOryxBuild: false
+    scmDoBuildDuringDeployment: false
+    functionsRuntimeScaleMonitoringEnabled: true
+    applicationInsightsName: appInsights.outputs.name
+    virtualNetworkIntegrationSubnetId: useVirtualNetworkIntegration ? vnet.outputs.virtualNetworkSubnets[0].id : ''
+    appSettings: {
+      // Needed for EP plans
+      WEBSITE_CONTENTSHARE: functionAppName
+      WEBSITE_CONTENTAZUREFILECONNECTIONSTRING: '@Microsoft.KeyVault(VaultName=${keyVault.outputs.name};SecretName=${storageSecretName})'
+
+      // If the storage account is private . . .
+      WEBSITE_CONTENTOVERVNET: 1
+
+      // WEBSITE_SKIP_CONTENTSHARE_VALIDATE should be set to 1 when using vnet private endpoint
+      // for Azure Storage or when WEBSITE_CONTENTAZUREFILECONNECTIONSTRING uses a
+      // key vault reference. See https://github.com/Azure/azure-functions-host/issues/7094
+      WEBSITE_SKIP_CONTENTSHARE_VALIDATION: 1
+
+      // Need the settings below if using (user-assigned) identity-based connection for AzureWebJobsStorage
+      // AzureWebJobsStorage__accountName: storage.name
+      // AzureWebJobsStorage__credential: 'managedidentity'
+      // AzureWebJobsStorage__clientId: uami.properties.clientId
+    }
+  }
+}
+
+output APPLICATIONINSIGHTS_CONNECTION_STRING string = appInsights.outputs.connectionString
 output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
-output REACT_APP_WEB_BASE_URL string = web.outputs.SERVICE_WEB_URI
-
+output SERVICE_FUNCTION_APP_NAME string = functionApp.outputs.name

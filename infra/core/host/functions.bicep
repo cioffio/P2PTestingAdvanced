@@ -1,4 +1,3 @@
-metadata description = 'Creates an Azure Function in an existing Azure App Service plan.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}
@@ -12,19 +11,42 @@ param storageAccountName string
 
 // Runtime Properties
 @allowed([
-  'dotnet', 'dotnetcore', 'dotnet-isolated', 'node', 'python', 'java', 'powershell', 'custom'
+  'dotnet'
+  'dotnetcore'
+  'dotnet-isolated'
+  'node'
+  'python'
+  'java'
+  'powershell'
+  'custom'
 ])
 param runtimeName string
-param runtimeNameAndVersion string = '${runtimeName}|${runtimeVersion}'
+
+// Valid values for FUNCTIONS_WORKER_RUNTIME (https://learn.microsoft.com/en-us/azure/azure-functions/functions-app-settings#functions_worker_runtime)
+@allowed([
+  'dotnet'
+  'dotnet-isolated'
+  'node'
+  'python'
+  'java'
+  'powershell'
+  'custom'
+])
+param functionsWorkerRuntime string
+param runtimeNameAndVersion string = '${functionsWorkerRuntime}|${runtimeVersion}'
 param runtimeVersion string
 
 // Function Settings
 @allowed([
-  '~4', '~3', '~2', '~1'
+  '~4'
+  '~3'
+  '~2'
+  '~1'
 ])
 param extensionVersion string = '~4'
 
 // Microsoft.Web/sites Properties
+@allowed(['functionapp', 'functionapp,linux'])
 param kind string = 'functionapp,linux'
 
 // Microsoft.Web/sites/config
@@ -41,7 +63,19 @@ param minimumElasticInstanceCount int = -1
 param numberOfWorkers int = -1
 param scmDoBuildDuringDeployment bool = true
 param use32BitWorkerProcess bool = false
-param healthCheckPath string = ''
+
+// NEW
+param vnetRouteAllEnabled bool = false
+param functionsRuntimeScaleMonitoringEnabled bool = false
+param userAssignedIdentityName string = ''
+param virtualNetworkIntegrationSubnetId string = ''
+param storageKeyVaultSecretName string = 'storage-connection-string'
+
+//NEW
+resource uami 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing =
+  if (!empty(userAssignedIdentityName)) {
+    name: userAssignedIdentityName
+  }
 
 module functions 'appservice.bicep' = {
   name: '${name}-functions'
@@ -54,15 +88,25 @@ module functions 'appservice.bicep' = {
     appCommandLine: appCommandLine
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
-    appSettings: union(appSettings, {
-        AzureWebJobsStorage: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};AccountKey=${storage.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'
+    appSettings: union(
+      appSettings,
+      {
         FUNCTIONS_EXTENSION_VERSION: extensionVersion
-        FUNCTIONS_WORKER_RUNTIME: runtimeName
-      })
+        FUNCTIONS_WORKER_RUNTIME: functionsWorkerRuntime
+      },
+      // Use the managed idenitty if available, otherwise use connection string in Key Vault.
+      (managedIdentity)
+        ? { AzureWebJobsStorage__accountName: storage.name }
+        : {
+            AzureWebJobsStorage: '@Microsoft.KeyVault(VaultName=${keyVaultName};SecretName=${storageKeyVaultSecretName})'
+          }
+    )
+    // If not using managed identity or Key Vault, use the connections string.
+    // { AzureWebJobsStorage: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};AccountKey=${storage.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}' }
+
     clientAffinityEnabled: clientAffinityEnabled
     enableOryxBuild: enableOryxBuild
     functionAppScaleLimit: functionAppScaleLimit
-    healthCheckPath: healthCheckPath
     keyVaultName: keyVaultName
     kind: kind
     linuxFxVersion: linuxFxVersion
@@ -74,6 +118,13 @@ module functions 'appservice.bicep' = {
     runtimeNameAndVersion: runtimeNameAndVersion
     scmDoBuildDuringDeployment: scmDoBuildDuringDeployment
     use32BitWorkerProcess: use32BitWorkerProcess
+
+    //NEW
+    virtualNetworkSubnetId: empty(virtualNetworkIntegrationSubnetId) ? '' : virtualNetworkIntegrationSubnetId
+    keyVaultReferenceIdentity: empty(userAssignedIdentityName) ? '' : uami.id
+    vnetRouteAllEnabled: vnetRouteAllEnabled
+    functionsRuntimeScaleMonitoringEnabled: functionsRuntimeScaleMonitoringEnabled
+    functionsExtensionVersion: extensionVersion
   }
 }
 
@@ -84,3 +135,4 @@ resource storage 'Microsoft.Storage/storageAccounts@2021-09-01' existing = {
 output identityPrincipalId string = managedIdentity ? functions.outputs.identityPrincipalId : ''
 output name string = functions.outputs.name
 output uri string = functions.outputs.uri
+output id string = functions.outputs.id

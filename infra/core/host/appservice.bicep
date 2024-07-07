@@ -11,7 +11,14 @@ param managedIdentity bool = !empty(keyVaultName)
 
 // Runtime Properties
 @allowed([
-  'dotnet', 'dotnetcore', 'dotnet-isolated', 'node', 'python', 'java', 'powershell', 'custom'
+  'dotnet'
+  'dotnetcore'
+  'dotnet-isolated'
+  'node'
+  'python'
+  'java'
+  'powershell'
+  'custom'
 ])
 param runtimeName string
 param runtimeNameAndVersion string = '${runtimeName}|${runtimeVersion}'
@@ -37,6 +44,15 @@ param use32BitWorkerProcess bool = false
 param ftpsState string = 'FtpsOnly'
 param healthCheckPath string = ''
 
+//NEW
+param virtualNetworkSubnetId string = ''
+param keyVaultReferenceIdentity string = ''
+param vnetRouteAllEnabled bool = false
+param functionsRuntimeScaleMonitoringEnabled bool = false
+param functionsExtensionVersion string = ''
+
+var isFunctionApp = contains(kind, 'functionapp')
+
 resource appService 'Microsoft.Web/sites@2022-03-01' = {
   name: name
   location: location
@@ -44,8 +60,28 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
   kind: kind
   properties: {
     serverFarmId: appServicePlanId
+
+    // NEW
+    virtualNetworkSubnetId: !empty(virtualNetworkSubnetId) ? virtualNetworkSubnetId : null
+
+    // NEW - Use for user-assigned managed identity.
+    keyVaultReferenceIdentity: !empty(keyVaultReferenceIdentity) ? keyVaultReferenceIdentity : null
+
     siteConfig: {
+      // NEW
+      vnetRouteAllEnabled: vnetRouteAllEnabled
+      functionsRuntimeScaleMonitoringEnabled: functionsRuntimeScaleMonitoringEnabled
+      appSettings: isFunctionApp
+        ? [
+            {
+              name: 'FUNCTIONS_EXTENSION_VERSION'
+              value: functionsExtensionVersion
+            }
+          ]
+        : []
+
       linuxFxVersion: linuxFxVersion
+
       alwaysOn: alwaysOn
       ftpsState: ftpsState
       minTlsVersion: '1.2'
@@ -56,17 +92,32 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
       functionAppScaleLimit: functionAppScaleLimit != -1 ? functionAppScaleLimit : null
       healthCheckPath: healthCheckPath
       cors: {
-        allowedOrigins: union([ 'https://portal.azure.com', 'https://ms.portal.azure.com' ], allowedOrigins)
+        allowedOrigins: union(['https://portal.azure.com', 'https://ms.portal.azure.com'], allowedOrigins)
       }
     }
     clientAffinityEnabled: clientAffinityEnabled
     httpsOnly: true
   }
 
+  // TODO: Support user assigned managed identity.
   identity: { type: managedIdentity ? 'SystemAssigned' : 'None' }
+
+  // NOTE: App Service logs aren't used for Function Apps.This isn't working with EP plans
+  // when setting WEBSITE_CONTENTAZUREFILECONNECTIONSTRING and WEBSITE_CONTENTSHARE
+  resource configLogs 'config' =
+    if (!isFunctionApp) {
+      name: 'logs'
+      properties: {
+        applicationLogs: { fileSystem: { level: 'Verbose' } }
+        detailedErrorMessages: { enabled: true }
+        failedRequestsTracing: { enabled: true }
+        httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
+      }
+    }
 
   resource basicPublishingCredentialsPoliciesFtp 'basicPublishingCredentialsPolicies' = {
     name: 'ftp'
+    location: location
     properties: {
       allow: false
     }
@@ -74,6 +125,7 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
 
   resource basicPublishingCredentialsPoliciesScm 'basicPublishingCredentialsPolicies' = {
     name: 'scm'
+    location: location
     properties: {
       allow: false
     }
@@ -86,38 +138,34 @@ module configAppSettings 'appservice-appsettings.bicep' = {
   name: '${name}-appSettings'
   params: {
     name: appService.name
-    appSettings: union(appSettings,
+    appSettings: union(
+      appSettings,
       {
         SCM_DO_BUILD_DURING_DEPLOYMENT: string(scmDoBuildDuringDeployment)
         ENABLE_ORYX_BUILD: string(enableOryxBuild)
       },
-      runtimeName == 'python' && appCommandLine == '' ? { PYTHON_ENABLE_GUNICORN_MULTIWORKERS: 'true'} : {},
-      !empty(applicationInsightsName) ? { APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString } : {},
-      !empty(keyVaultName) ? { AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri } : {})
+      runtimeName == 'python' && appCommandLine == '' ? { PYTHON_ENABLE_GUNICORN_MULTIWORKERS: 'true' } : {},
+      !empty(applicationInsightsName)
+        ? { APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString }
+        : {},
+      !empty(keyVaultName) ? { AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri } : {}
+    )
   }
 }
 
-// sites/web/config 'logs'
-resource configLogs 'Microsoft.Web/sites/config@2022-03-01' = {
-  name: 'logs'
-  parent: appService
-  properties: {
-    applicationLogs: { fileSystem: { level: 'Verbose' } }
-    detailedErrorMessages: { enabled: true }
-    failedRequestsTracing: { enabled: true }
-    httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
+resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing =
+  if (!(empty(keyVaultName))) {
+    name: keyVaultName
   }
-  dependsOn: [configAppSettings]
-}
 
-resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = if (!(empty(keyVaultName))) {
-  name: keyVaultName
-}
-
-resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = if (!empty(applicationInsightsName)) {
-  name: applicationInsightsName
-}
+resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing =
+  if (!empty(applicationInsightsName)) {
+    name: applicationInsightsName
+  }
 
 output identityPrincipalId string = managedIdentity ? appService.identity.principalId : ''
 output name string = appService.name
 output uri string = 'https://${appService.properties.defaultHostName}'
+
+//NEW
+output id string = appService.id
