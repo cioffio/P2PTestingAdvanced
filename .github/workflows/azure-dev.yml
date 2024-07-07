@@ -17,7 +17,7 @@ jobs:
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       AZURE_RESOURCE_GROUP: rg-p2p-mailconf-env
-      AZURE_ENV_NAME: my-environment-name  # Replace with your actual environment name
+      AZURE_ENV_NAME: dev  # Replace with your actual environment name
       AZURE_LOCATION: eastus  # Replace with your actual location
     steps:
       - name: Checkout
@@ -43,6 +43,10 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Verify Login
+        run: |
+          az account show
 
       - name: Provision Infrastructure
         run: azd provision --no-prompt
