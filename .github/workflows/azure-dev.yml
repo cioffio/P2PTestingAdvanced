@@ -45,9 +45,7 @@ jobs:
           azd auth login --client-id $AZURE_CLIENT_ID --client-secret $(<secret.txt) --tenant-id $AZURE_TENANT_ID
         shell: bash
 
-      - name: Verify Login
-        run: |
-          az account show
+   
 
       - name: Provision Infrastructure with Virtual Network
         run: azd provision --no-prompt
