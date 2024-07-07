@@ -44,13 +44,21 @@ jobs:
           azd auth login --client-id $AZURE_CLIENT_ID --client-secret $(<secret.txt) --tenant-id $AZURE_TENANT_ID
         shell: bash
 
+      - name: Verify Login
+        run: |
+          az account show
 
-      - name: Provision Infrastructure
+      - name: Provision Infrastructure with Virtual Network
         run: azd provision --no-prompt
         env:
           AZURE_ENV_NAME: ${{ env.AZURE_ENV_NAME }}
           AZURE_LOCATION: ${{ env.AZURE_LOCATION }}
           AZURE_SUBSCRIPTION_ID: ${{ env.AZURE_SUBSCRIPTION_ID }}
+          USE_VIRTUAL_NETWORK_INTEGRATION: true
+          USE_VIRTUAL_NETWORK_PRIVATE_ENDPOINT: true
+          VIRTUAL_NETWORK_ADDRESS_SPACE_PREFIX: "10.1.0.0/16"
+          VIRTUAL_NETWORK_INTEGRATION_SUBNET_ADDRESS_SPACE_PREFIX: "10.1.1.0/24"
+          VIRTUAL_NETWORK_PRIVATE_ENDPOINT_SUBNET_ADDRESS_SPACE_PREFIX: "10.1.2.0/24"
 
       - name: Deploy Application
         run: azd deploy --no-prompt
