@@ -2,14 +2,14 @@ targetScope = 'subscription'
 
 @minLength(1)
 @maxLength(64)
-@description('Name of the the environment which is used to generate a short unique hash used in all resources.')
+@description('Name of the environment which is used to generate a short unique hash used in all resources.')
 param environmentName string
 
 @minLength(1)
 @description('Primary location for all resources')
 param location string
 
-// Optional parameters to override the default azd resource naming conventions. Update the main.parameters.json file to provide values. e.g.,:
+// Optional parameters to override the default azd resource naming conventions. Update the main.parameters.json file to provide values. e.g.,
 // "resourceGroupName": {
 //      "value": "myGroupName"
 // }
@@ -71,6 +71,7 @@ module keyVault './core/security/keyvault.bicep' = {
     location: location
     tags: tags
     principalId: principalId
+    useVirtualNetworkPrivateEndpoint: useVirtualNetworkPrivateEndpoint
   }
 }
 
@@ -159,4 +160,4 @@ output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
 output REACT_APP_WEB_BASE_URL string = web.outputs.SERVICE_WEB_URI
 output USE_APIM bool = useAPIM
-
+output SERVICE_API_ENDPOINTS array = useAPIM ? [] : []
