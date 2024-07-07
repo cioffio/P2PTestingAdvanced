@@ -38,11 +38,9 @@ jobs:
           inlineScript: |
             az --version
 
-      - name: Log in with Azure using Service Principal
+      - name: Log in with Azure (Client Credentials)
         run: |
-          echo "Logging in to Azure..."
-          echo $AZURE_CLIENT_SECRET > secret.txt
-          az login --service-principal -u $AZURE_CLIENT_ID -p $(<secret.txt) --tenant $AZURE_TENANT_ID
+          az login --service-principal -u $AZURE_CLIENT_ID -p=$AZURE_CLIENT_SECRET --tenant $AZURE_TENANT_ID
         shell: bash
 
       - name: Verify Login
