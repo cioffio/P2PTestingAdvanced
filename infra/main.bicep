@@ -101,7 +101,7 @@ module web './app/web.bicep' = {
 }
 
 // Virtual Network and Subnets
-module integrationSubnetNsg 'core/networking/network-security-group.bicep' = if (useVirtualNetwork) {
+module integrationSubnetNsg './core/networking/network-security-group.bicep' = if (useVirtualNetwork) {
   name: 'integrationSubnetNsg'
   scope: rg
   params: {
@@ -110,7 +110,7 @@ module integrationSubnetNsg 'core/networking/network-security-group.bicep' = if 
   }
 }
 
-module privateEndpointSubnetNsg 'core/networking/network-security-group.bicep' = if (useVirtualNetwork) {
+module privateEndpointSubnetNsg './core/networking/network-security-group.bicep' = if (useVirtualNetwork) {
   name: 'privateEndpointSubnetNsg'
   scope: rg
   params: {
