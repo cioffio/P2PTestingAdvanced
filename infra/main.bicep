@@ -21,8 +21,6 @@ param logAnalyticsName string = ''
 param resourceGroupName string = ''
 param webServiceName string = ''
 
-@description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
-param useAPIM bool = false
 
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
@@ -159,5 +157,4 @@ output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
 output REACT_APP_WEB_BASE_URL string = web.outputs.SERVICE_WEB_URI
-output USE_APIM bool = useAPIM
-output SERVICE_API_ENDPOINTS array = useAPIM ? [] : []
+
